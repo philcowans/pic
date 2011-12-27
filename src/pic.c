@@ -28,7 +28,7 @@ int main(int argc, char **argv) {
 
   double vb = 3.0; // Beam velocity
   double dt = 0.1; // Time step (inverse plasma frequency units)
-  double tmax = 20.0; // Time scale for simulation
+  double tmax = 200.0; // Time scale for simulation
 
   // Initialize simulation
 
@@ -49,6 +49,7 @@ int main(int argc, char **argv) {
   for(int i = 0; i < num_steps; ++i) {
     evolve_solution(t, N, J, L, r, v, rhs_eval, dt);
     normalize_coordinates(N, L, r, v);
+    // printf("%f, %f\n", r[0], v[0]);
   }
 
   for(int i = 0; i < N; ++i) {
@@ -250,7 +251,7 @@ void rhs_eval(double t, int N, int J, int L, double *r, double *v, double *rdot,
   double rho[J];
   for(int j = 0; j < J; ++j)
     rho[j] = ne[j] / n0 - 1.0;
-  double kappa = 2.0 * M_PI / L;
+  double kappa = 2.0 * M_PI / (double)L;
   double phi[J];
   calculate_potential(N, J, phi, rho, kappa);
 
