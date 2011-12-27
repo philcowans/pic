@@ -1,5 +1,6 @@
 #include <fftw.h>
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 
@@ -11,7 +12,7 @@ void calculate_electic_field(int J, int L, double *phi, double *E);
 void calculate_electron_density(int N, int J, int L, double *r, double *ne);
 void calculate_potential(int N, int J, double *phi, double *rho, double kappa);
 double distribution(double vb); // Sample from velocity distribution of beam
-void evolve_solution(double t, int N, double *r, double *v, void (*rhs_eval)(double, int, int, int, double *, double *, double *, double *), double dt); // Evolve solution by one timestep
+void evolve_solution(double t, int N, int J, int L, double *r, double *v, void (*rhs_eval)(double, int, int, int, double *, double *, double *, double *), double dt); // Evolve solution by one timestep
 void fft_forward(int J, double *f, double *Fr, double *Fi);
 void fft_backward(int J, double *Fr, double *Fi, double *f);
 void normalize_coordinates(int N, int L, double *r, double *v);
@@ -46,8 +47,12 @@ int main(int argc, char **argv) {
 
   int num_steps = (int)floor(tmax / dt);
   for(int i = 0; i < num_steps; ++i) {
-    evolve_solution(t, N, r, v, rhs_eval, dt);
+    evolve_solution(t, N, J, L, r, v, rhs_eval, dt);
     normalize_coordinates(N, L, r, v);
+  }
+
+  for(int i = 0; i < N; ++i) {
+    printf("%f, %f\n", r[i], v[i]);
   }
 
   return 0;
@@ -123,8 +128,63 @@ double distribution(double vb) {
 
 // Numerical integrator
 
-void evolve_solution(double t, int N, double *r, double *v, void (*rhs_eval)(double, int, int, int, double *, double *, double *, double *), double dt) {
-  
+void evolve_solution(double t, int N, int J, int L, double *r, double *v, void (*rhs_eval)(double, int, int, int, double *, double *, double *, double *), double dt) {
+  double rk1[N];
+  double rk2[N];
+  double rk3[N];
+  double rk4[N];
+  double rf[N];
+  double rdot[N];
+
+  double vk1[N];
+  double vk2[N];
+  double vk3[N];
+  double vk4[N];
+  double vf[N];
+  double vdot[N];
+
+  // Zeroth intermediate step 
+  (*rhs_eval)(t, N, J, L, r, v, rdot, vdot);
+  for(int j = 0; j < N; ++j) {
+    rk1[j] = dt * rdot[j];
+    vk1[j] = dt * vdot[j];
+    rf[J] = r[J] + rk1[J] / 2.0;
+    vf[J] = v[J] + vk1[J] / 2.0;
+  }
+
+  // First intermediate step 
+  (*rhs_eval)(t + dt/2.0, N, J, L, rf, vf, rdot, vdot);
+  for(int j = 0; j < N; ++j) {
+    rk2[j] = dt * rdot[j];
+    vk2[j] = dt * vdot[j];
+    rf[J] = r[J] + rk2[J] / 2.0;
+    vf[J] = v[J] + vk2[J] / 2.0;
+  }
+
+  // Second intermediate step
+  (*rhs_eval)(t + dt/2.0, N, J, L, rf, vf, rdot, vdot);
+  for(int j = 0; j < N; ++j) {
+    rk3[j] = dt * rdot[j];
+    vk3[j] = dt * vdot[j];
+    rf[J] = r[J] + rk3[J];
+    vf[J] = v[J] + vk3[J];
+  }
+
+  // Third intermediate step 
+  (*rhs_eval)(t + dt, N, J, L, rf, vf, rdot, vdot);
+  for(int j = 0; j < N; ++j) {
+    rk4[j] = dt * rdot[j];
+    vk4[j] = dt * vdot[j];
+  }
+
+  // Actual step 
+  for(int j = 0; j < N; ++j) {
+    r[j] += rk1[j] / 6.0 + rk2[j] / 3.0 + rk3[j] / 3.0 + rk4[j] / 6.0;
+    v[j] += vk1[j] / 6.0 + vk2[j] / 3.0 + vk3[j] / 3.0 + vk4[j] / 6.0;
+  }
+
+  // TODO: This isn't actually returned (not an issue here)
+  t += dt;
 }
 
 // Calculates Fourier transform of array f in arrays Fr and Fi
