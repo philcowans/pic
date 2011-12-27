@@ -7,13 +7,13 @@ int main(int argc, char **argv) {
   
   // Simulation parameters
 
-  int L; // Domain length (Debye lengths)
-  int N; // Number of electrons to simulate
-  int J; // Number of grid points
+  int L = 100; // Domain length (Debye lengths)
+  int N = 20000; // Number of electrons to simulate
+  int J = 1000; // Number of grid points
 
-  double vb; // Beam velocity
-  double dt; // Time step (inverse plasma frequency units)
-  double tmax; // Time scale for simulation
+  double vb = 3.0; // Beam velocity
+  double dt = 0.1; // Time step (inverse plasma frequency units)
+  double tmax = 10; // Time scale for simulation
 
   // Initialize simulation
 
