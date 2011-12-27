@@ -28,7 +28,7 @@ int main(int argc, char **argv) {
 
   double vb = 3.0; // Beam velocity
   double dt = 0.1; // Time step (inverse plasma frequency units)
-  double tmax = 10; // Time scale for simulation
+  double tmax = 20.0; // Time scale for simulation
 
   // Initialize simulation
 
@@ -246,10 +246,10 @@ void rhs_eval(double t, int N, int J, int L, double *r, double *v, double *rdot,
   double ne[N];
   calculate_electron_density(N, J, L, r, ne);
   
-  double n0 = (double)N/L;
+  double n0 = N/(double)L;
   double rho[J];
   for(int j = 0; j < J; ++j)
-    rho[J] = ne[j] / n0 - 1.0;
+    rho[j] = ne[j] / n0 - 1.0;
   double kappa = 2.0 * M_PI / L;
   double phi[J];
   calculate_potential(N, J, phi, rho, kappa);
