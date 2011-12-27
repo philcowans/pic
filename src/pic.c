@@ -1,13 +1,21 @@
+#include <fftw.h>
+#include <math.h>
 #include <stdlib.h>
 #include <time.h>
 
-void calculate_electic_field(N, phi, E);
-void calculate_electron_density(N, r, ne);
-void calculate_potential(N, phi, rho, kappa);
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+void calculate_electic_field(int J, int L, double *phi, double *E);
+void calculate_electron_density(int N, int J, int L, double *r, double *ne);
+void calculate_potential(int N, int J, double *phi, double *rho, double kappa);
 double distribution(double vb); // Sample from velocity distribution of beam
-void evolve_solution(double &t, int N, double *r, double *v, void (*rhs_eval)(double &, int, double *, double *, double *, double *), double dt); // Evolve solution by one timestep
-void normalize_coordinates(int N, double *r, double *v);
-void rhs_eval(double &t, int N, int J, double *r, double *v, double dt); // calculate derivative for evolution proces
+void evolve_solution(double t, int N, double *r, double *v, void (*rhs_eval)(double, int, int, int, double *, double *, double *, double *), double dt); // Evolve solution by one timestep
+void fft_forward(int J, double *f, double *Fr, double *Fi);
+void fft_backward(int J, double *Fr, double *Fi, double *f);
+void normalize_coordinates(int N, int L, double *r, double *v);
+void rhs_eval(double t, int N, int J, int L, double *r, double *v, double *rdot, double *vdot); // calculate derivative for evolution proces
 
 int main(int argc, char **argv) {
   
@@ -39,10 +47,59 @@ int main(int argc, char **argv) {
   int num_steps = (int)floor(tmax / dt);
   for(int i = 0; i < num_steps; ++i) {
     evolve_solution(t, N, r, v, rhs_eval, dt);
-    normalize_coordinates(N, r, v);
+    normalize_coordinates(N, L, r, v);
   }
 
   return 0;
+}
+
+void calculate_electic_field(int J, int L, double *phi, double *E) {
+  double dx = L / (double)J;
+
+  for(int j = 1; j < J-1; ++j)
+    E[j] = ((phi[j-1] - phi[j+1]) / 2.0) / dx;
+
+  E[0] = ((phi[J-1] - phi[1]) / 2.0) / dx;
+  E[J-1] = ((phi[J-2] - phi[0]) / 2.0) / dx;
+}
+
+void calculate_electron_density(int N, int J, int L, double *r, double *ne) {
+  double dx = L / (double)J;
+  
+  for(int j = 0; j < J; ++j) {
+    ne[j] = 0.0;
+  }
+
+  for(int i = 0; i < N; ++i) {
+    int j = (int)floor(r[i] / dx);
+    double y = r[i] / dx - (double)j;
+    ne[j] += (1.0 - y) / dx;
+    if(j+1 == J) 
+      ne[0] += y / dx;
+    else 
+      ne[j+1] += y / dx;
+  }
+}
+
+void calculate_potential(int N, int J, double *phi, double *rho, double kappa) {
+  double Vr[J], Vi[J], Ur[J], Ui[J];
+
+  // Fourier transform source term
+  fft_forward(J, rho, Vr, Vi);
+
+  Ur[0] = Ui[0] = 0.0;
+
+  for(int j = 1; j <= J/2; ++j) {
+    Ur[j] = -Vr[j] / (double)(j * j) / kappa / kappa;
+    Ui[j] = -Vi[j] / (double)(j * j) / kappa / kappa;
+  } 
+
+  for (int j = J/2; j < J; ++j) {
+    Ur[j] = Ur[J-j];
+    Ui[j] = -Ui[J-j];
+  }
+
+  fft_backward(J, Ur, Ui, phi);
 }
 
 // Rejection sampler for Maxwellian beam distributions
@@ -66,11 +123,53 @@ double distribution(double vb) {
 
 // Numerical integrator
 
-void evolve_solution(double &t, int N, double *r, double *v, void (*rhs_eval)(double, int, double *, double *, double *, double *), double dt) {
+void evolve_solution(double t, int N, double *r, double *v, void (*rhs_eval)(double, int, int, int, double *, double *, double *, double *), double dt) {
   
 }
 
-void normalize_coordinates(int N, double *r, double *v) {
+// Calculates Fourier transform of array f in arrays Fr and Fi
+void fft_forward(int J, double *f, double *Fr, double *Fi) {
+  fftw_complex ff[J], FF[J];
+
+  for (int j = 0; j < J; ++j) {
+    ff[j].re = f[j]; 
+    ff[j].im = 0.0;
+  }
+
+  fftw_plan p = fftw_create_plan(J, FFTW_FORWARD, FFTW_ESTIMATE);
+  fftw_one(p, ff, FF);
+  fftw_destroy_plan(p); 
+
+  for (int j = 0; j < J; ++j) {
+    Fr[j] = FF[j].re; 
+    Fi[j] = FF[j].im;
+  }
+
+  // Normalize data
+  for (int j = 0; j < J; ++j) {
+    Fr[j] /= (double)J;
+    Fi[j] /= (double)J;
+  }
+}
+
+// Calculates inverse Fourier transform of arrays Fr and Fi in array f
+void fft_backward(int J, double *Fr, double *Fi, double *f) {
+  fftw_complex ff[J], FF[J];
+
+  for(int j = 0; j < J; ++j) {
+    FF[j].re = Fr[j]; 
+    FF[j].im = Fi[j];
+  }
+
+  fftw_plan p = fftw_create_plan(J, FFTW_BACKWARD, FFTW_ESTIMATE);
+  fftw_one(p, FF, ff);
+  fftw_destroy_plan(p); 
+
+  for(int j = 0; j < J; ++j)
+    f[j] = ff[j].re; 
+}
+
+void normalize_coordinates(int N, int L, double *r, double *v) {
   for(int i = 0; i < N; ++i) {
     if(r[i] < 0.0) 
       r[i] += L;
@@ -81,22 +180,22 @@ void normalize_coordinates(int N, double *r, double *v) {
 
 // Calculate derivative
 
-void rhs_eval(double &t, int N, int J, double *r, double *v, double *rdot, double *vdot) {
-  normalize_coordinates(N, r, v);
+void rhs_eval(double t, int N, int J, int L, double *r, double *v, double *rdot, double *vdot) {
+  normalize_coordinates(N, L, r, v);
 
   double ne[N];
-  calculate_electron_density(N, r, ne);
+  calculate_electron_density(N, J, L, r, ne);
   
   double n0 = (double)N/L;
   double rho[J];
   for(int j = 0; j < J; ++j)
     rho[J] = ne[j] / n0 - 1.0;
   double kappa = 2.0 * M_PI / L;
-  double phi[N];
-  calculate_potential(N, phi, rho, kappa);
+  double phi[J];
+  calculate_potential(N, J, phi, rho, kappa);
 
-  double E[N];
-  calculate_electic_field(N, phi, E);
+  double E[J];
+  calculate_electic_field(J, L, phi, E);
 
   for(int i = 0; i < N; ++i) {
     double dx = L / (double)J;
@@ -108,5 +207,4 @@ void rhs_eval(double &t, int N, int J, double *r, double *v, double *rdot, doubl
     rdot[i] = v[i];
     vdot[i] = -Efield;
   }
-  
 }
