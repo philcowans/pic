@@ -8,15 +8,25 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+typedef struct particle_t {
+  double r[3];
+  double v[3];
+} particle;
+
+typedef struct derivative_t {
+  double rdot[3];
+  double vdot[3];
+} derivative;
+
 void calculate_electic_field(int J, int L, double *phi, double *E);
 void calculate_electron_density(int N, int J, int L, double *r, double *ne);
 void calculate_potential(int N, int J, double *phi, double *rho, double kappa);
 double distribution(double vb); // Sample from velocity distribution of beam
-void evolve_solution(double t, int N, int J, int L, double *r, double *v, void (*rhs_eval)(double, int, int, int, double *, double *, double *, double *), double dt); // Evolve solution by one timestep
+void evolve_solution(double t, int N, int J, int L, particle *y, void (*rhs_eval)(double, int, int, int, particle *, derivative *), double dt); // Evolve solution by one timestep
 void fft_forward(int J, double *f, double *Fr, double *Fi);
 void fft_backward(int J, double *Fr, double *Fi, double *f);
-void normalize_coordinates(int N, int L, double *r, double *v);
-void rhs_eval(double t, int N, int J, int L, double *r, double *v, double *rdot, double *vdot); // calculate derivative for evolution proces
+void normalize_coordinates(int N, int L, particle *y);
+void rhs_eval(double t, int N, int J, int L, particle *y, derivative *ydot); // calculate derivative for evolution proces
 
 int main(int argc, char **argv) {
   
@@ -36,19 +46,23 @@ int main(int argc, char **argv) {
   int seed = time(NULL);
   srand(seed);
   
-  double r[N];
-  double v[N];
+  particle y[N];
+
   for(int i = 0; i < N; ++i) {
-    r[i] = L * ((double)rand()) / ((double)RAND_MAX);
-    v[i] = distribution(vb);
+    y[i].r[0] = L * ((double)rand()) / ((double)RAND_MAX);
+    y[i].r[1] = L * ((double)rand()) / ((double)RAND_MAX);
+    y[i].r[2] = L * ((double)rand()) / ((double)RAND_MAX);
+    y[i].v[0] = distribution(vb);
+    y[i].v[1] = 0.0;
+    y[i].v[2] = 0.0;
   }
 
   // Now actually run it
 
   int num_steps = (int)floor(tmax / dt);
   for(int i = 0; i < num_steps; ++i) {
-    evolve_solution(t, N, J, L, r, v, rhs_eval, dt);
-    normalize_coordinates(N, L, r, v);
+    evolve_solution(t, N, J, L, y, rhs_eval, dt);
+    normalize_coordinates(N, L, y);
     // printf("%f, %f\n", r[0], v[0]);
   }
 
@@ -129,7 +143,7 @@ double distribution(double vb) {
 
 // Numerical integrator
 
-void evolve_solution(double t, int N, int J, int L, double *r, double *v, void (*rhs_eval)(double, int, int, int, double *, double *, double *, double *), double dt) {
+void evolve_solution(double t, int N, int J, int L, particle *y, void (*rhs_eval)(double, int, int, int, particle *, derivative *), double dt) {
   double rk1[N];
   double rk2[N];
   double rk3[N];
@@ -230,19 +244,21 @@ void fft_backward(int J, double *Fr, double *Fi, double *f) {
     f[j] = ff[j].re; 
 }
 
-void normalize_coordinates(int N, int L, double *r, double *v) {
+void normalize_coordinates(int N, int L, particle *y) {
   for(int i = 0; i < N; ++i) {
-    if(r[i] < 0.0) 
-      r[i] += L;
-    if(r[i] > L)
-      r[i] -= L;
+    for(int j = 0; j < 3; ++j) {
+      if(y[i].r[j] < 0.0) 
+	y[i].r[j] += L;
+      if(y[i].r[j] > L)
+	y[i].r[j] -= L;
+    }
   }
 }
 
 // Calculate derivative
 
 void rhs_eval(double t, int N, int J, int L, double *r, double *v, double *rdot, double *vdot) {
-  normalize_coordinates(N, L, r, v);
+  normalize_coordinates(N, L, y);
 
   double ne[N];
   calculate_electron_density(N, J, L, r, ne);
